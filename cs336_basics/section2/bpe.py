@@ -1,6 +1,7 @@
 import regex as re
 import heapq
 from collections import defaultdict
+import tqdm
 
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -111,8 +112,17 @@ def update_pair_freq(pair_freq: dict[tuple[str, str], int], byte_freq: dict[tupl
 
     return updated_pair_freq
 
-def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    data = open(input_path, "r").read()
+def train_bpe(
+        input_path: str,
+        vocab_size: int,
+        special_tokens: list[str],
+    ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+
+    print('yes')
+
+    data = open(input_path, "r", encoding="utf-8").read()
+
+    print('data loaded')
 
     # # separate data into chunks based on <|endoftext|>
     # chunks = data.split("<|endoftext|>")
@@ -125,6 +135,8 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     #         token_freq[k] = token_freq.get(k, 0) + v
 
     token_freq = build_token_freq(data, special_tokens)
+
+    print('token frequencies built')
 
     # initialize token list with single byte tokens
     # token_list = {int(k.encode('utf-8')[0]) : k.encode('utf-8') for k in vocab}
@@ -139,64 +151,87 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
 
     byte_freq = get_byte_freq(token_freq)
     pair_freq = calculate_pair_freq(byte_freq)
-    
+    print('pair frequencies built')
+
     # add a reverse index for byte pairs to bytes
     pair_idx = calculate_pair_idx(byte_freq)
 
     # store the merged pair and tokens that include the pair,
     merges = []
 
-    while idx < vocab_size:
-        pair_to_merge = get_most_freq_pair(pair_freq)
-        merges.append(pair_to_merge)  # already bytes!
+    print('starting merges')
 
-        A, B = pair_to_merge
-        AB = A + B
+    # total number of merges we expect to perform
+    total_merges = vocab_size - idx
 
-        # --- only look at affected sequences via pair_idx ---
-        affected_seqs = list(pair_idx.pop(pair_to_merge, []))
-        del pair_freq[pair_to_merge]
+    with tqdm(total=total_merges, desc="Training BPE", unit="merge") as pbar:
+        while idx < vocab_size and pair_freq:
+            pair_to_merge = get_most_freq_pair(pair_freq)
+            merges.append(pair_to_merge)
 
-        for seq in affected_seqs:
-            freq = byte_freq.pop(seq)
+            A, B = pair_to_merge
+            AB = A + B
 
-            # Step 1: undo this seq's contributions to pair_freq / pair_idx
-            for i in range(len(seq) - 1):
-                p = (seq[i], seq[i+1])
-                if p == pair_to_merge:
-                    continue          # already removed above
-                pair_freq[p] -= freq
-                if pair_freq[p] <= 0:
-                    del pair_freq[p]
-                if p in pair_idx:
-                    pair_idx[p].discard(seq)
+            # show current merge info in progress bar
+            pbar.set_postfix({
+                "vocab": idx,
+                "pair": repr(AB.decode("utf-8", errors="replace"))[:30],
+                "freq": pair_freq.get(pair_to_merge, 0),
+            })
 
-            # Step 2: build the merged sequence
-            new_seq = []
-            i = 0
-            while i < len(seq):
-                if i+1 < len(seq) and seq[i] == A and seq[i+1] == B:
-                    new_seq.append(AB)
-                    i += 2
-                else:
-                    new_seq.append(seq[i])
-                    i += 1
-            new_seq = tuple(new_seq)
+            # only look at affected sequences via pair_idx
+            affected_seqs = list(pair_idx.pop(pair_to_merge, []))
+            del pair_freq[pair_to_merge]
 
-            # Step 3: add new_seq's contributions back
-            byte_freq[new_seq] = byte_freq.get(new_seq, 0) + freq
-            for i in range(len(new_seq) - 1):
-                p = (new_seq[i], new_seq[i+1])
-                pair_freq[p] = pair_freq.get(p, 0) + freq
-                pair_idx.setdefault(p, set()).add(new_seq)
+            for seq in affected_seqs:
+                freq = byte_freq.pop(seq)
+
+                # Step 1: undo this seq's contributions to pair_freq / pair_idx
+                for i in range(len(seq) - 1):
+                    p = (seq[i], seq[i + 1])
+
+                    if p == pair_to_merge:
+                        continue
+
+                    pair_freq[p] -= freq
+                    if pair_freq[p] <= 0:
+                        del pair_freq[p]
+
+                    if p in pair_idx:
+                        pair_idx[p].discard(seq)
+                        if not pair_idx[p]:
+                            del pair_idx[p]
+
+                # Step 2: build the merged sequence
+                new_seq = []
+                i = 0
+                while i < len(seq):
+                    if i + 1 < len(seq) and seq[i] == A and seq[i + 1] == B:
+                        new_seq.append(AB)
+                        i += 2
+                    else:
+                        new_seq.append(seq[i])
+                        i += 1
+
+                new_seq = tuple(new_seq)
+
+                # Step 3: add new_seq's contributions back
+                byte_freq[new_seq] = byte_freq.get(new_seq, 0) + freq
+
+                for i in range(len(new_seq) - 1):
+                    p = (new_seq[i], new_seq[i + 1])
+                    pair_freq[p] = pair_freq.get(p, 0) + freq
+                    pair_idx.setdefault(p, set()).add(new_seq)
         
-        # byte_freq = merge_pair(byte_freq, pair_to_merge)
-        # pair_freq = calculate_pair_freq(byte_freq)
-        
-        # value as bytes, key as int
-        # token_list[idx] = ''.join(pair_to_merge)
-        # token_list[idx] = pair_to_merge[0] + pair_to_merge[1]
-        token_list[idx] = AB
-        idx += 1
+            # byte_freq = merge_pair(byte_freq, pair_to_merge)
+            # pair_freq = calculate_pair_freq(byte_freq)
+            
+            # value as bytes, key as int
+            # token_list[idx] = ''.join(pair_to_merge)
+            # token_list[idx] = pair_to_merge[0] + pair_to_merge[1]
+            token_list[idx] = AB
+            idx += 1
+
+            pbar.update(1)
 
     return token_list, merges
