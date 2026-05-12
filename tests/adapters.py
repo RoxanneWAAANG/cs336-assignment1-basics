@@ -18,6 +18,8 @@ from cs336_basics.section3.positionwise_feedforward import FFN
 from cs336_basics.section3.rope import RoPE
 from cs336_basics.section3.softmax import Softmax
 from cs336_basics.section3.scaled_dot_product_attention import Attention
+from cs336_basics.section3.multihead_self_attention import MultiHeadSelfAttention
+
 
 def run_linear(
     d_in: int,
@@ -182,7 +184,23 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    multihead_self_attention = MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads)
+    
+    multihead_self_attention.load_state_dict({
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "o_proj.weight": o_proj_weight,
+    })
+
+    seq_len = in_features.shape[-2]
+
+    M = torch.tril(
+        torch.ones(seq_len, seq_len, device=in_features.device, dtype=torch.bool)
+    )
+
+    return multihead_self_attention(in_features, M=M)
 
 
 def run_multihead_self_attention_with_rope(
@@ -222,7 +240,29 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    multihead_self_attention = MultiHeadSelfAttention(
+        d_model=d_model,
+        num_heads=num_heads,
+        use_rope=True,
+        rope_theta=theta,
+        max_seq_len=max_seq_len,
+    )
+
+    multihead_self_attention.load_state_dict({
+        "q_proj.weight": q_proj_weight,
+        "k_proj.weight": k_proj_weight,
+        "v_proj.weight": v_proj_weight,
+        "o_proj.weight": o_proj_weight,
+    })
+
+    seq_len = in_features.shape[-2]
+
+    M = torch.tril(
+        torch.ones(seq_len, seq_len, device=in_features.device, dtype=torch.bool)
+    )
+
+    return multihead_self_attention(in_features, token_positions=token_positions, M=M)
 
 
 def run_rope(
