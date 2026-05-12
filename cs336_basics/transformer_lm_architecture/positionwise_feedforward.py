@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import math
 
-from cs336_basics.section3.linear import Linear
+from cs336_basics.transformer_lm_architecture.linear import Linear
 
 class FFN(nn.Module):
     def __init__(self, d_model: int, d_ff: int):

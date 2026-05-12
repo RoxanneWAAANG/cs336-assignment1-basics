@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from cs336_basics.section3.scaled_dot_product_attention import Attention
-from cs336_basics.section3.rope import RoPE
-from cs336_basics.section3.linear import Linear
+from cs336_basics.transformer_lm_architecture.scaled_dot_product_attention import Attention
+from cs336_basics.transformer_lm_architecture.rope import RoPE
+from cs336_basics.transformer_lm_architecture.linear import Linear
 
 class MultiHeadSelfAttention(nn.Module):
     def __init__(

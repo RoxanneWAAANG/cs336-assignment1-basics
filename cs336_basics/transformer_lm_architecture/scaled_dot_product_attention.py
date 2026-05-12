@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from cs336_basics.section3.softmax import Softmax
+from cs336_basics.transformer_lm_architecture.softmax import Softmax
 
 class Attention(nn.Module):
     def __init__(self, d_k: int):

@@ -9,17 +9,19 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from cs336_basics.section2.bpe import train_bpe
-from cs336_basics.section2.tokenizer import BPE_Tokenizer
-from cs336_basics.section3.linear import Linear
-from cs336_basics.section3.embedding import Embedding
-from cs336_basics.section3.rmsnorm import RMSNorm
-from cs336_basics.section3.positionwise_feedforward import FFN
-from cs336_basics.section3.rope import RoPE
-from cs336_basics.section3.softmax import Softmax
-from cs336_basics.section3.scaled_dot_product_attention import Attention
-from cs336_basics.section3.multihead_self_attention import MultiHeadSelfAttention
-from cs336_basics.section3.transformer_block import TransformerBlock
+from cs336_basics.bpe_tokenizer.bpe import train_bpe
+from cs336_basics.bpe_tokenizer.tokenizer import BPE_Tokenizer
+
+from cs336_basics.transformer_lm_architecture.linear import Linear
+from cs336_basics.transformer_lm_architecture.embedding import Embedding
+from cs336_basics.transformer_lm_architecture.rmsnorm import RMSNorm
+from cs336_basics.transformer_lm_architecture.positionwise_feedforward import FFN
+from cs336_basics.transformer_lm_architecture.rope import RoPE
+from cs336_basics.transformer_lm_architecture.softmax import Softmax
+from cs336_basics.transformer_lm_architecture.scaled_dot_product_attention import Attention
+from cs336_basics.transformer_lm_architecture.multihead_self_attention import MultiHeadSelfAttention
+from cs336_basics.transformer_lm_architecture.transformer_block import TransformerBlock
+from cs336_basics.transformer_lm_architecture.transformer_lm import TransformerLM
 
 
 def run_linear(
@@ -475,7 +477,71 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    transformer_lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        num_layers=num_layers,
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+
+    transformer_lm.load_state_dict({
+        "embedding.weight": weights["token_embeddings.weight"],
+        "final_layer_norm.gain": weights["ln_final.weight"],
+        "output_projection.weight": weights["lm_head.weight"],
+        **{
+            f"transformer_blocks.{i}.self_attention.q_proj.weight": weights[f"layers.{i}.attn.q_proj.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.self_attention.k_proj.weight": weights[f"layers.{i}.attn.k_proj.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.self_attention.v_proj.weight": weights[f"layers.{i}.attn.v_proj.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.self_attention.o_proj.weight": weights[f"layers.{i}.attn.output_proj.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.ffn.linear1.weight": weights[f"layers.{i}.ffn.w1.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.ffn.linear2.weight": weights[f"layers.{i}.ffn.w2.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.ffn.linear3.weight": weights[f"layers.{i}.ffn.w3.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.norm1.gain": weights[f"layers.{i}.ln1.weight"]
+            for i in range(num_layers)
+        },
+        **{
+            f"transformer_blocks.{i}.norm2.gain": weights[f"layers.{i}.ln2.weight"]
+            for i in range(num_layers)
+        },
+    })
+
+    seq_len = in_indices.shape[-1]
+
+    M = torch.tril(
+        torch.ones(
+            seq_len,
+            seq_len,
+            device=in_indices.device,
+            dtype=torch.bool,
+        )
+    )
+
+    return transformer_lm(in_indices, M=M)
 
 
 def run_rmsnorm(
