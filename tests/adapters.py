@@ -19,6 +19,7 @@ from cs336_basics.section3.rope import RoPE
 from cs336_basics.section3.softmax import Softmax
 from cs336_basics.section3.scaled_dot_product_attention import Attention
 from cs336_basics.section3.multihead_self_attention import MultiHeadSelfAttention
+from cs336_basics.section3.transformer_block import TransformerBlock
 
 
 def run_linear(
@@ -365,7 +366,34 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    transformer_block = TransformerBlock(
+        d_model,
+        num_heads,
+        d_ff,
+        theta,
+        max_seq_len
+    )
+
+    transformer_block.load_state_dict({
+        "self_attention.q_proj.weight": weights["attn.q_proj.weight"],
+        "self_attention.k_proj.weight": weights["attn.k_proj.weight"],
+        "self_attention.v_proj.weight": weights["attn.v_proj.weight"],
+        "self_attention.o_proj.weight": weights["attn.output_proj.weight"],
+        "ffn.linear1.weight": weights["ffn.w1.weight"],
+        "ffn.linear2.weight": weights["ffn.w2.weight"],
+        "ffn.linear3.weight": weights["ffn.w3.weight"],
+        "norm1.gain": weights["ln1.weight"],
+        "norm2.gain": weights["ln2.weight"],
+    })
+
+    seq_len = in_features.shape[-2]
+
+    M = torch.tril(
+        torch.ones(seq_len, seq_len, device=in_features.device, dtype=torch.bool)
+    )
+
+    return transformer_block(in_features, M=M)
 
 
 def run_transformer_lm(
