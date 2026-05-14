@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
@@ -22,6 +23,11 @@ from cs336_basics.transformer_lm_architecture.scaled_dot_product_attention impor
 from cs336_basics.transformer_lm_architecture.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.transformer_lm_architecture.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm_architecture.transformer_lm import TransformerLM
+
+from cs336_basics.transformer_lm_training.cross_entropy import CrossEntropyLoss
+from cs336_basics.transformer_lm_training.adamw import AdamW
+# from cs336_basics.transformer_lm_training.learning_rate_schedule import CosineSchedule
+from cs336_basics.transformer_lm_training.gradient_clipping import GradientClipper
 
 
 def run_linear(
@@ -634,7 +640,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
 
 
 def run_cross_entropy(
-    inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
+    inputs: Float[Tensor, " batch_size vocab_size"],
+    targets: Int[Tensor, " batch_size"]
 ) -> Float[Tensor, ""]:
     """Given a tensor of inputs and targets, compute the average cross-entropy
     loss across examples.
@@ -648,7 +655,9 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    cross_entropy_loss = CrossEntropyLoss()
+    return cross_entropy_loss(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -660,14 +669,17 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    clipper = GradientClipper(max_l2_norm=max_l2_norm)
+    clipper(parameters)
 
 
 def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    return torch.optim.AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -695,7 +707,23 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    # 1. Linear warmup
+    if it < warmup_iters:
+        return max_learning_rate * it / warmup_iters
+
+    # 2. After cosine decay ends, keep min LR
+    if it > cosine_cycle_iters:
+        return min_learning_rate
+
+    # 3. Cosine decay
+    progress = (it - warmup_iters) / (cosine_cycle_iters - warmup_iters)
+
+    lr = min_learning_rate + 0.5 * (max_learning_rate - min_learning_rate) * (
+        1 + math.cos(math.pi * progress)
+    )
+
+    return lr
 
 
 def run_save_checkpoint(
